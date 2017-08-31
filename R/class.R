@@ -32,7 +32,7 @@ setMethod("dbGetInfo", "JDBCDriver", def=function(dbObj, ...)
        DBI.version="0.1-1",
        client.version=NA,
        max.connections=NA)
-          )
+)
 
 setMethod("dbUnloadDriver", "JDBCDriver", def=function(drv, ...) FALSE)
 
@@ -51,14 +51,14 @@ setMethod("dbConnect", "JDBCDriver", def=function(drv, url, user='', password=''
   }
   .verify.JDBC.result(jc, "Unable to connect JDBC to ",url)
   new("JDBCConnection", jc=jc, identifier.quote=drv@identifier.quote)},
-          valueClass="JDBCConnection")
+  valueClass="JDBCConnection")
 
 ### JDBCConnection
 
 setClass("JDBCConnection", representation("DBIConnection", jc="jobjRef", identifier.quote="character"))
 
 setMethod("dbDisconnect", "JDBCConnection", def=function(conn, ...)
-          {.jcall(conn@jc, "V", "close"); TRUE})
+{.jcall(conn@jc, "V", "close"); TRUE})
 
 .fillStatementParameters <- function(s, l) {
   for (i in 1:length(l)) {
@@ -105,7 +105,7 @@ setMethod("dbSendQuery", signature(conn="JDBCConnection", statement="character")
 
 if (is.null(getGeneric("dbSendUpdate"))) setGeneric("dbSendUpdate", function(conn, statement, ...) standardGeneric("dbSendUpdate"))
 
-setMethod("dbSendUpdate",  signature(conn="JDBCConnection", statement="character"),  def=function(conn, statement, ..., list=NULL, max.batch=10000L) {
+setMethod("dbSendUpdate",  signature(conn="JDBCConnection", statement="character"),  def=function(conn, statement, ..., list=NULL) {
   statement <- as.character(statement)[1L]
   ## if the statement starts with {call or {?= call then we use CallableStatement 
   if (isTRUE(as.logical(grepl("^\\{(call|\\?= *call)", statement)))) {
@@ -118,27 +118,11 @@ setMethod("dbSendUpdate",  signature(conn="JDBCConnection", statement="character
     .verify.JDBC.result(r, "Unable to retrieve JDBC result set for ",statement)
   } else if (length(list(...)) || length(list)) { ## use prepared statements if there are additional arguments
     s <- .jcall(conn@jc, "Ljava/sql/PreparedStatement;", "prepareStatement", statement, check=FALSE)
-    .verify.JDBC.result(s, "Unable to create JDBC prepared statement ", statement)
+    .verify.JDBC.result(s, "Unable to execute JDBC prepared statement ", statement)
     on.exit(.jcall(s, "V", "close")) # this will fix issue #4 and http://stackoverflow.com/q/21603660/2161065
-    l <- c(list(...), list)
-    if (length(l)) {
-      if (length(tl <- table(sapply(l, length))) > 1) stop("all parameters must have the same length")
-      if (as.integer(names(tl)) > 1) { ## batch insert
-        bx <- .jnew("info/urbanek/Rpackage/RJDBC/JDBCBatchExecute", s, length(l))
-        .verify.JDBC.result(bx, "Unable to create batch-insert object")
-        for (o in l) {
-          if (is.integer(o)) .jcall(bx, "V", "addIntegers", o)
-          else if (is.numeric(o)) .jcall(bx, "V", "addDoubles", o)
-          else .jcall(bx, "V", "addStrings", as.character(o))
-        }
-        .jcall(bx, "V", "execute", as.integer(max.batch))
-        .verify.JDBC.result(bx, "Unable to execute batch-insert query ", statement)
-      } else {
-        .fillStatementParameters(s, l)
-        .jcall(s, "I", "executeUpdate", check=FALSE)
-      }
-    } else
-      .jcall(s, "I", "executeUpdate", check=FALSE)
+    if (length(list(...))) .fillStatementParameters(s, list(...))
+    if (!is.null(list)) .fillStatementParameters(s, list)
+    .jcall(s, "I", "executeUpdate", check=FALSE)
   } else {
     s <- .jcall(conn@jc, "Ljava/sql/Statement;", "createStatement")
     .verify.JDBC.result(s, "Unable to create JDBC statement ",statement)
@@ -165,7 +149,7 @@ setMethod("dbGetInfo", "JDBCConnection",
 
 setMethod("dbListResults", "JDBCConnection",
           def = function(conn, ...) { warning("JDBC maintains no list of active results"); NULL }
-          )
+)
 
 .fetch.result <- function(r) {
   md <- .jcall(r, "Ljava/sql/ResultSetMetaData;", "getMetaData", check=FALSE)
@@ -174,12 +158,11 @@ setMethod("dbListResults", "JDBCConnection",
   fetch(res, -1)
 }
 
-setMethod("dbListTables", "JDBCConnection", def=function(conn, pattern="%", schema=NULL, ...) {
+setMethod("dbListTables", "JDBCConnection", def=function(conn, pattern="%", ...) {
   md <- .jcall(conn@jc, "Ljava/sql/DatabaseMetaData;", "getMetaData", check=FALSE)
   .verify.JDBC.result(md, "Unable to retrieve JDBC database metadata")
-  schema <- if (is.null(schema)) .jnull("java/lang/String") else as.character(schema)[1L]
   r <- .jcall(md, "Ljava/sql/ResultSet;", "getTables", .jnull("java/lang/String"),
-              schema, pattern, .jnull("[Ljava/lang/String;"), check=FALSE)
+              .jnull("java/lang/String"), pattern, .jnull("[Ljava/lang/String;"), check=FALSE)
   .verify.JDBC.result(r, "Unable to retrieve JDBC tables list")
   on.exit(.jcall(r, "V", "close"))
   ts <- character()
@@ -190,12 +173,11 @@ setMethod("dbListTables", "JDBCConnection", def=function(conn, pattern="%", sche
 
 if (is.null(getGeneric("dbGetTables"))) setGeneric("dbGetTables", function(conn, ...) standardGeneric("dbGetTables"))
 
-setMethod("dbGetTables", "JDBCConnection", def=function(conn, pattern="%", schema=NULL, ...) {
+setMethod("dbGetTables", "JDBCConnection", def=function(conn, pattern="%", ...) {
   md <- .jcall(conn@jc, "Ljava/sql/DatabaseMetaData;", "getMetaData", check=FALSE)
   .verify.JDBC.result(md, "Unable to retrieve JDBC database metadata")
-  schema <- if (is.null(schema)) .jnull("java/lang/String") else as.character(schema)[1L]
   r <- .jcall(md, "Ljava/sql/ResultSet;", "getTables", .jnull("java/lang/String"),
-              schema, pattern, .jnull("[Ljava/lang/String;"), check=FALSE)
+              .jnull("java/lang/String"), pattern, .jnull("[Ljava/lang/String;"), check=FALSE)
   .verify.JDBC.result(r, "Unable to retrieve JDBC tables list")
   on.exit(.jcall(r, "V", "close"))
   .fetch.result(r)
@@ -232,7 +214,7 @@ setMethod("dbGetFields", "JDBCConnection", def=function(conn, name, pattern="%",
 })
 
 setMethod("dbReadTable", "JDBCConnection", def=function(conn, name, ...)
-          dbGetQuery(conn, paste("SELECT * FROM",.sql.qescape(name,TRUE,conn@identifier.quote))))
+  dbGetQuery(conn, paste("SELECT * FROM",.sql.qescape(name,TRUE,conn@identifier.quote))))
 
 setMethod("dbDataType", signature(dbObj="JDBCConnection", obj = "ANY"),
           def = function(dbObj, obj, ...) {
@@ -257,7 +239,7 @@ setMethod("dbDataType", signature(dbObj="JDBCConnection", obj = "ANY"),
   paste(quote,s,quote,sep='')
 }
 
-setMethod("dbWriteTable", "JDBCConnection", def=function(conn, name, value, overwrite=TRUE, append=FALSE, ..., max.batch=10000L) {
+setMethod("dbWriteTable", "JDBCConnection", def=function(conn, name, value, overwrite=TRUE, append=FALSE, ...) {
   ac <- .jcall(conn@jc, "Z", "getAutoCommit")
   overwrite <- isTRUE(as.logical(overwrite))
   append <- if (overwrite) FALSE else isTRUE(as.logical(append))
@@ -286,11 +268,10 @@ setMethod("dbWriteTable", "JDBCConnection", def=function(conn, name, value, over
   }
   if (length(value[[1]])) {
     inss <- paste("INSERT INTO ",qname," VALUES(", paste(rep("?",length(value)),collapse=','),")",sep='')
-    ## ake sure everything is a character other than real/int
-    list <- lapply(value, function(o) if (!is.numeric(o)) as.character(o) else o)
-    dbSendUpdate(conn, inss, list=list)
+    for (j in 1:length(value[[1]]))
+      dbSendUpdate(conn, inss, list=as.list(value[j,]))
   }
-  if (ac) dbCommit(conn)
+  if (ac) dbCommit(conn)            
 })
 
 setMethod("dbCommit", "JDBCConnection", def=function(conn, ...) {.jcall(conn@jc, "V", "commit"); TRUE})
@@ -322,7 +303,7 @@ setMethod("fetch", signature(res="JDBCResult", n="numeric"), def=function(res, n
       cts[i] <- 1L
     } else
       l_template[[i]] <- character()
-    names(l_template)[i] <- .jcall(res@md, "S", "getColumnLabel", i)
+    names(l_template)[i] <- .jcall(res@md, "S", "getColumnName", i)
   }
   rp <- res@pull
   if (is.jnull(rp)) {
@@ -350,7 +331,6 @@ setMethod("fetch", signature(res="JDBCResult", n="numeric"), def=function(res, n
   data.table::rbindlist(l_container[1:l_container_used_elements])
 })
 
-
 setMethod("dbClearResult", "JDBCResult",
           def = function(res, ...) { .jcall(res@jr, "V", "close"); .jcall(res@stat, "V", "close"); TRUE },
           valueClass = "logical")
@@ -365,13 +345,11 @@ setMethod("dbColumnInfo", "JDBCResult", def = function(res, ...) {
   l <- list(field.name=character(), field.type=character(), data.type=character())
   if (cols < 1) return(as.data.frame(l))
   for (i in 1:cols) {
-    l$name[i] <- .jcall(res@md, "S", "getColumnLabel", i)
+    l$field.name[i] <- .jcall(res@md, "S", "getColumnName", i)
     l$field.type[i] <- .jcall(res@md, "S", "getColumnTypeName", i)
     ct <- .jcall(res@md, "I", "getColumnType", i)
     l$data.type[i] <- if (ct == -5 | ct ==-6 | (ct >= 2 & ct <= 8)) "numeric" else "character"
-    l$field.name[i] <- .jcall(res@md, "S", "getColumnName", i)
   }
   as.data.frame(l, row.names=1:cols)    
 },
-          valueClass = "data.frame")
-
+valueClass = "data.frame")
